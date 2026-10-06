@@ -86,10 +86,23 @@ app.post("/sms", async (req, res) => {
 });
 app.get("/sms", async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      'SELECT * FROM "mail_events" ORDER BY "created_at" DESC'
-    );
-    res.json(rows);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const offset = (page - 1) * limit;
+
+    const [{ rows }, { rows: [{ total }] }] = await Promise.all([
+      pool.query(
+        'SELECT * FROM "mail_events" ORDER BY "created_at" DESC, "id" DESC LIMIT $1 OFFSET $2',
+        [limit, offset]
+      ),
+      pool.query('SELECT count(*)::int AS total FROM "mail_events"'),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    res.json({
+      data: rows,
+      pagination: { page, limit, total, totalPages, hasNext: page < totalPages, hasPrev: page > 1 },
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch mail events" });
